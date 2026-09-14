@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tres and GPSI Inventory Monitoring</title>
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+<style>
+  :root{ --tres:#0ea5e9; --gpsi:#f59e0b; }
+  body{font-family:'Segoe UI',Tahoma,sans-serif;}
+  .fade-in{animation:fadeIn .45s ease both}
+  @keyframes fadeIn{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+  .pop{animation:pop .4s cubic-bezier(.2,1.4,.4,1) both}
+  @keyframes pop{from{opacity:0;transform:scale(.9)}to{opacity:1;transform:scale(1)}}
+  .row-in{animation:rowIn .35s ease both}
+  @keyframes rowIn{from{opacity:0;transform:translateX(-12px)}to{opacity:1;transform:none}}
+  .card{transition:transform .25s,box-shadow .25s}
+  .card:hover{transform:translateY(-6px) scale(1.02);box-shadow:0 18px 40px -12px rgba(0,0,0,.35)}
+  .bar{transition:width 1s cubic-bezier(.2,.8,.2,1)}
+  .glow{box-shadow:0 0 0 0 rgba(56,189,248,.6);animation:glow 2.4s infinite}
+  @keyframes glow{0%{box-shadow:0 0 0 0 rgba(56,189,248,.45)}70%{box-shadow:0 0 0 16px rgba(56,189,248,0)}100%{box-shadow:0 0 0 0 rgba(56,189,248,0)}}
+  .modal-in{animation:mIn .3s ease both}
+  @keyframes mIn{from{opacity:0;transform:translateY(30px) scale(.96)}to{opacity:1;transform:none}}
+  ::-webkit-scrollbar{height:9px;width:9px}
+  ::-webkit-scrollbar-thumb{background:#475569;border-radius:9px}
+  ::-webkit-scrollbar-track{background:#0f172a}
+  .toast{animation:tIn .3s ease both}
+  @keyframes tIn{from{opacity:0;transform:translateX(60px)}to{opacity:1;transform:none}}
+  .spin-slow{animation:sp 9s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  @media print{.no-print{display:none!important}body{background:#fff!important;color:#000!important}}
+</style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen">
+
+<!-- HEADER -->
+<header class="sticky top-0 z-40 backdrop-blur bg-slate-900/80 border-b border-slate-700 no-print">
+  <div class="max-w-[1600px] mx-auto px-4 py-3 flex flex-wrap items-center gap-3">
+    <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-sky-500 to-amber-500 grid place-items-center text-xl spin-slow">📦</div>
+    <div class="mr-auto">
+      <h1 class="text-lg sm:text-xl font-extrabold tracking-tight bg-gradient-to-r from-sky-400 to-amber-400 bg-clip-text text-transparent">TRES and GPSI Inventory Monitoring</h1>
+      <p class="text-[11px] text-slate-400">Offline Warehouse Stock System · saves in this browser</p>
+    </div>
+    <div class="flex flex-wrap gap-2 text-xs">
+      <button onclick="openForm()" class="glow px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 font-semibold">＋ Add Item</button>
+      <button onclick="exportJSON()" class="px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600">💾 Backup</button>
+      <label class="px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 cursor-pointer">📂 Restore<input type="file" accept=".json" class="hidden" onchange="importJSON(event)"></label>
+      <button onclick="exportCSV()" class="px-3 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-600">⬇ CSV</button>
+      <button onclick="window.print()" class="px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600">🖨 Print</button>
+    </div>
+  </div>
+
+  <!-- COMPANY TABS -->
+  <div class="max-w-[1600px] mx-auto px-4 pb-3 flex gap-2">
+    <button id="tab-TRES" onclick="setCompany('TRES')" class="tabbtn flex-1 sm:flex-none px-6 py-2.5 rounded-t-xl font-bold text-sm border-b-4">🏢 TRES</button>
+    <button id="tab-GPSI" onclick="setCompany('GPSI')" class="tabbtn flex-1 sm:flex-none px-6 py-2.5 rounded-t-xl font-bold text-sm border-b-4">🏭 GPSI</button>
+    <button id="tab-ALL" onclick="setCompany('ALL')" class="tabbtn flex-1 sm:flex-none px-6 py-2.5 rounded-t-xl font-bold text-sm border-b-4">🌐 COMBINED</button>
+  </div>
+</header>
+
+<main class="max-w-[1600px] mx-auto p-4 space-y-5">
+
+  <!-- STAT CARDS -->
+  <section id="stats" class="grid grid-cols-2 lg:grid-cols-6 gap-3"></section>
+
+  <!-- SUMMARY BARS -->
+  <section class="grid md:grid-cols-3 gap-4">
+    <div class="md:col-span-2 bg-slate-900 border border-slate-800 rounded-2xl p-4 fade-in">
+      <h3 class="font-bold text-sm mb-3 text-slate-300">📊 Stock Status Summary (based on material details)</h3>
+      <div id="statusBars" class="space-y-3"></div>
+    </div>
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 fade-in">
+      <h3 class="font-bold text-sm mb-3 text-slate-300">🏗 Top Projects by Value</h3>
+      <div id="projBars" class="space-y-2 max-h-56 overflow-auto pr-1"></div>
+    </div>
+  </section>
+
+  <!-- FILTERS -->
+  <section class="bg-slate-900 border border-slate-800 rounded-2xl p-3 grid sm:grid-cols-2 lg:grid-cols-6 gap-2 no-print fade-in">
+    <input id="fSearch" oninput="render()" placeholder="🔍 Search name / description / code" class="lg:col-span-2 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-sky-500">
+    <select id="fStatus" onchange="render()" class="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm"><option value="">All Status</option><option>In Stock</option><option>Delivered</option><option>Reserved</option><option>Out of Stock</option></select>
+    <select id="fProject" onchange="render()" class="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm"><option value="">All Projects</option></select>
+    <select id="fLocation" onchange="render()" class="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm"><option value="">All Locations</option></select>
+    <button onclick="clearFilters()" class="bg-slate-700 hover:bg-slate-600 rounded-lg px-3 py-2 text-sm">✕ Clear Filters</button>
+  </section>
+
+  <!-- TABLE -->
+  <section class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden fade-in">
+    <div class="flex items-center justify-between px-4 py-3 border-b border-slate-800">
+      <h3 class="font-bold text-sm">📋 Inventory List <span id="countLbl" class="text-slate-400 font-normal"></span></h3>
+      <span id="valLbl" class="text-xs text-emerald-400 font-semibold"></span>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm min-w-[1150px]">
+        <thead class="bg-slate-800/80 text-slate-300 text-xs uppercase">
+          <tr>
+            <th class="p-3 text-left cursor-pointer" onclick="sortBy('company')">Co.</th>
+            <th class="p-3 text-left cursor-pointer" onclick="sortBy('name')">Stock Name ⇅</th>
+            <th class="p-3 text-left">Description of Item</th>
+            <th class="p-3 text-center cursor-pointer" onclick="sortBy('qty')">Qty ⇅</th>
+            <th class="p-3 text-left">Unit</th>
+            <th class="p-3 text-left cursor-pointer" onclick="sortBy('project')">Project</th>
+            <th class="p-3 text-right cursor-pointer" onclick="sortBy('price')">Unit Price ⇅</th>
+            <th class="p-3 text-right">Total Value</th>
+            <th class="p-3 text-left">Location</th>
+            <th class="p-3 text-center">Status</th>
+            <th class="p-3 text-center no-print">Action</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+  </section>
+  <p class="text-center text-[11px] text-slate-600 pb-6">Data is stored offline in your browser (localStorage). Use 💾 Backup regularly to keep a copy of your inventory file.</p>
+</main>
+
+<!-- MODAL -->
+<div id="modal" class="fixed inset-0 z-50 hidden bg-black/70 backdrop-blur-sm p-4 overflow-auto">
+  <div class="modal-in max-w-2xl mx-auto my-6 bg-slate-900 border border-slate-700 rounded-2xl p-5">
+    <h3 id="mTitle" class="text-lg font-bold mb-4">Add Stock Item</h3>
+    <div class="grid sm:grid-cols-2 gap-3 text-sm">
+      <div><label class="lbl">Company</label><select id="iCompany" class="inp"><option>TRES</option><option>GPSI</option></select></div>
+      <div><label class="lbl">Item Code</label><input id="iCode" class="inp" placeholder="e.g. TR-0012"></div>
+      <div class="sm:col-span-2"><label class="lbl">Name of Stock *</label><input id="iName" class="inp" placeholder="e.g. PVC Pipe 4 inch"></div>
+      <div class="sm:col-span-2"><label class="lbl">Description / Details of Material</label><textarea id="iDesc" rows="2" class="inp" placeholder="Specs, brand, size, material details..."></textarea></div>
+      <div><label class="lbl">Quantity</label><input id="iQty" type="number" min="0" step="any" class="inp" value="0"></div>
+      <div><label class="lbl">Unit</label><input id="iUnit" class="inp" placeholder="pcs / box / kg / m"></div>
+      <div><label class="lbl">Project</label><input id="iProject" class="inp" list="projList" placeholder="Project name"><datalist id="projList"></datalist></div>
+      <div><label class="lbl">Unit Price</label><input id="iPrice" type="number" min="0" step="any" class="inp" value="0"></div>
+      <div><label class="lbl">Location</label><input id="iLocation" class="inp" list="locList" placeholder="Warehouse / Rack"><datalist id="locList"></datalist></div>
+      <div><label class="lbl">Status</label><select id="iStatus" class="inp"><option>In Stock</option><option>Delivered</option><option>Reserved</option><option>Out of Stock</option></select></div>
+      <div><label class="lbl">Date</label><input id="iDate" type="date" class="inp"></div>
+      <div><label class="lbl">Remarks</label><input id="iRemarks" class="inp" placeholder="DR No. / received by..."></div>
+    </div>
+    <div class="flex gap-2 justify-end mt-5">
+      <button onclick="closeForm()" class="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-sm">Cancel</button>
+      <button onclick="saveItem()" class="px-5 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-sm font-semibold">Save Item</button>
+    </div>
+  </div>
+</div>
+
+<div id="toasts" class="fixed bottom-4 right-4 z-[60] space-y-2"></div>
+
+<style>
+  .inp{width:100%;background:#1e293b;border:1px solid #334155;border-radius:.5rem;padding:.5rem .7rem;color:#e2e8f0;outline:none}
+  .inp:focus{border-color:#0ea5e9}
+  .lbl{display:block;font-size:11px;color:#94a3b8;margin-bottom:3px;font-weight:600}
+</style>
+
+<script>
+const KEY='tres_gpsi_inventory_v1';
+let DB=[], company='TRES', editId=null, sortKey='name', sortDir=1;
+
+const seed=[
+ {id:1,company:'TRES',code:'TR-001',name:'PVC Pipe 4"',desc:'Schedule 40, 3 meters, Atlanta brand',qty:120,unit:'pcs',project:'Tower A Plumbing',price:450,location:'WH-1 Rack A2',status:'In Stock',date:'2026-01-12',remarks:''},
+ {id:2,company:'TRES',code:'TR-002',name:'Electrical Wire THHN 3.5mm',desc:'Copper stranded, 150m roll, Phelps Dodge',qty:18,unit:'roll',project:'Tower A Electrical',price:3850,location:'WH-1 Rack B1',status:'In Stock',date:'2026-01-15',remarks:''},
+ {id:3,company:'TRES',code:'TR-003',name:'Portland Cement',desc:'40kg bag, Type 1',qty:0,unit:'bag',project:'Site Works',price:265,location:'WH-2 Bay 1',status:'Delivered',date:'2026-02-02',remarks:'DR-2291 delivered to site'},
+ {id:4,company:'GPSI',code:'GP-001',name:'Steel Angle Bar 2x2',desc:'6mm thick, 6 meters length',qty:75,unit:'pcs',project:'Warehouse Fabrication',price:1180,location:'WH-3 Yard',status:'In Stock',date:'2026-01-20',remarks:''},
+ {id:5,company:'GPSI',code:'GP-002',name:'Safety Helmet',desc:'ANSI certified, yellow, with chin strap',qty:40,unit:'pcs',project:'General PPE',project2:'',price:320,location:'WH-1 Shelf C',status:'Reserved',date:'2026-02-05',remarks:'For new hires'},
+ {id:6,company:'GPSI',code:'GP-003',name:'Welding Rod E6013',desc:'2.5mm, 5kg box',qty:0,unit:'box',project:'Warehouse Fabrication',price:890,location:'WH-3 Rack D',status:'Out of Stock',date:'2026-02-08',remarks:'For re-order'}
+];
+
+function load(){ try{DB=JSON.parse(localStorage.getItem(KEY))||seed;}catch(e){DB=seed;} save(false); }
+function save(t=true){ localStorage.setItem(KEY,JSON.stringify(DB)); if(t)toast('Saved to offline storage ✔'); }
+function money(n){ return '₱'+(+n||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function toast(m,c='bg-emerald-600'){ const d=document.createElement('div'); d.className='toast '+c+' text-white text-sm px-4 py-2.5 rounded-lg shadow-lg'; d.textContent=m; toasts.appendChild(d); setTimeout(()=>{d.style.opacity=0;d.style.transition='.4s';setTimeout(()=>d.remove(),400)},2200); }
+
+function setCompany(c){ company=c; document.querySelectorAll('.tabbtn').forEach(b=>b.className='tabbtn flex-1 sm:flex-none px-6 py-2.5 rounded-t-xl font-bold text-sm border-b-4 bg-slate-800 text-slate-400 border-transparent hover:text-slate-200');
+  const a=document.getElementById('tab-'+c); const col=c==='TRES'?'border-sky-400 text-sky-300':c==='GPSI'?'border-amber-400 text-amber-300':'border-emerald-400 text-emerald-300';
+  a.className='tabbtn flex-1 sm:flex-none px-6 py-2.5 rounded-t-xl font-bold text-sm border-b-4 bg-slate-800 '+col; render(); }
+
+function base(){ return company==='ALL'?DB:DB.filter(x=>x.company===company); }
+function filtered(){
+  const q=fSearch.value.toLowerCase(), s=fStatus.value, p=fProject.value, l=fLocation.value;
+  let r=base().filter(x=>(!q||(x.name+x.desc+x.code+x.remarks).toLowerCase().includes(q))&&(!s||x.status===s)&&(!p||x.project===p)&&(!l||x.location===l));
+  r.sort((a,b)=>{const A=a[sortKey],B=b[sortKey]; return (typeof A==='number'?A-B:String(A).localeCompare(String(B)))*sortDir;});
+  return r;
+}
+function sortBy(k){ sortDir = sortKey===k?-sortDir:1; sortKey=k; render(); }
+function clearFilters(){ fSearch.value='';fStatus.value='';fProject.value='';fLocation.value='';render(); }
+
+function render(){
+  const all=base(), rows=filtered();
+  // dropdowns
+  const projs=[...new Set(all.map(x=>x.project).filter(Boolean))].sort();
+  const locs=[...new Set(all.map(x=>x.location).filter(Boolean))].sort();
+  fill(fProject,projs,'All Projects'); fill(fLocation,locs,'All Locations');
+  projList.innerHTML=[...new Set(DB.map(x=>x.project).filter(Boolean))].map(v=>`<option value="${v}">`).join('');
+  locList.innerHTML=[...new Set(DB.map(x=>x.location).filter(Boolean))].map(v=>`<option value="${v}">`).join('');
+
+  // stats
+  const tot=all.length, inS=all.filter(x=>x.status==='In Stock').length, del=all.filter(x=>x.status==='Delivered').length,
+        out=all.filter(x=>x.status==='Out of Stock'||+x.qty<=0).length, qty=all.reduce((s,x)=>s+ +x.qty,0),
+        val=all.reduce((s,x)=>s+ +x.qty* +x.price,0);
+  const cards=[['Total Items',tot,'from-sky-600 to-sky-800','📦'],['Total Qty',qty.toLocaleString(),'from-indigo-600 to-indigo-800','🔢'],
+    ['In Stock',inS,'from-emerald-600 to-emerald-800','✅'],['Delivered',del,'from-amber-600 to-amber-800','🚚'],
+    ['Out / Zero',out,'from-rose-600 to-rose-800','⚠️'],['Total Value',money(val),'from-fuchsia-600 to-fuchsia-800','💰']];
+  stats.innerHTML=cards.map((c,i)=>`<div class="card pop bg-gradient-to-br ${c[2]} rounded-2xl p-4" style="animation-delay:${i*60}ms">
+     <div class="text-2xl">${c[3]}</div><div class="text-[11px] uppercase tracking-wide opacity-80 mt-1">${c[0]}</div>
+     <div class="text-xl sm:text-2xl font-extrabold truncate">${c[1]}</div></div>`).join('');
+
+  // status bars
+  const st=['In Stock','Delivered','Reserved','Out of Stock'], cols=['bg-emerald-500','bg-amber-500','bg-sky-500','bg-rose-500'];
+  statusBars.innerHTML=st.map((s,i)=>{const n=all.filter(x=>x.status===s).length,pct=tot?n/tot*100:0,v=all.filter(x=>x.status===s).reduce((a,x)=>a+ +x.qty* +x.price,0);
+    return `<div><div class="flex justify-between text-xs mb-1"><span>${s} — <b>${n}</b> item(s)</span><span class="text-slate-400">${money(v)}</span></div>
+    <div class="h-3 bg-slate-800 rounded-full overflow-hidden"><div class="bar h-full ${cols[i]}" style="width:0%"></div></div></div>`}).join('');
+  requestAnimationFrame(()=>document.querySelectorAll('#statusBars .bar').forEach((b,i)=>{const n=all.filter(x=>x.status===st[i]).length;b.style.width=(tot?n/tot*100:0)+'%';}));
+
+  // project bars
+  const pv={}; all.forEach(x=>pv[x.project||'—']=(pv[x.project||'—']||0)+ +x.qty* +x.price);
+  const top=Object.entries(pv).sort((a,b)=>b[1]-a[1]).slice(0,8), max=top[0]?top[0][1]:1;
+  projBars.innerHTML=top.map(([p,v])=>`<div><div class="flex justify-between text-[11px] mb-0.5"><span class="truncate">${p}</span><span class="text-emerald-400">${money(v)}</span></div>
+    <div class="h-2 bg-slate-800 rounded-full overflow-hidden"><div class="bar h-full bg-gradient-to-r from-sky-500 to-amber-400" style="width:0%" data-w="${max?v/max*100:0}"></div></div></div>`).join('')||'<p class="text-xs text-slate-500">No data</p>';
+  requestAnimationFrame(()=>document.querySelectorAll('#projBars .bar').forEach(b=>b.style.width=b.dataset.w+'%'));
+
+  // table
+  const badge={'In Stock':'bg-emerald-500/20 text-emerald-300 border-emerald-500/40','Delivered':'bg-amber-500/20 text-amber-300 border-amber-500/40','Reserved':'bg-sky-500/20 text-sky-300 border-sky-500/40','Out of Stock':'bg-rose-500/20 text-rose-300 border-rose-500/40'};
+  tbody.innerHTML=rows.map((x,i)=>`<tr class="row-in border-t border-slate-800 hover:bg-slate-800/60" style="animation-delay:${Math.min(i*25,500)}ms">
+    <td class="p-3"><span class="text-[10px] font-bold px-2 py-1 rounded ${x.company==='TRES'?'bg-sky-600':'bg-amber-600'}">${x.company}</span></td>
+    <td class="p-3 font-semibold">${x.name}<div class="text-[10px] text-slate-500">${x.code||''} ${x.date?'· '+x.date:''}</div></td>
+    <td class="p-3 text-slate-400 text-xs max-w-[240px]">${x.desc||''}${x.remarks?`<div class="text-[10px] text-slate-500 italic">${x.remarks}</div>`:''}</td>
+    <td class="p-3 text-center font-bold ${+x.qty<=0?'text-rose-400':+x.qty<10?'text-amber-400':'text-emerald-400'}">${(+x.qty).toLocaleString()}</td>
+    <td class="p-3 text-slate-400 text-xs">${x.unit||''}</td>
+    <td class="p-3 text-xs">${x.project||'—'}</td>
+    <td class="p-3 text-right">${money(x.price)}</td>
+    <td class="p-3 text-right font-semibold text-emerald-400">${money(+x.qty*+x.price)}</td>
+    <td class="p-3 text-xs">📍 ${x.location||'—'}</td>
+    <td class="p-3 text-center"><span class="text-[10px] px-2 py-1 rounded-full border ${badge[x.status]||''}">${x.status}</span></td>
+    <td class="p-3 text-center no-print whitespace-nowrap">
+      <button onclick="openForm(${x.id})" class="px-2 py-1 bg-slate-700 hover:bg-sky-600 rounded text-xs">✏</button>
+      <button onclick="dup(${x.id})" class="px-2 py-1 bg-slate-700 hover:bg-indigo-600 rounded text-xs">⧉</button>
+      <button onclick="del(${x.id})" class="px-2 py-1 bg-slate-700 hover:bg-rose-600 rounded text-xs">🗑</button></td></tr>`).join('')
+    ||'<tr><td colspan="11" class="p-10 text-center text-slate-500">No items found. Click “＋ Add Item” to start your inventory.</td></tr>';
+  countLbl.textContent=`(${rows.length} of ${all.length})`;
+  valLbl.textContent='Filtered Value: '+money(rows.reduce((s,x)=>s+ +x.qty*+x.price,0));
+}
+function fill(sel,arr,ph){ const v=sel.value; sel.innerHTML=`<option value="">${ph}</option>`+arr.map(a=>`<option>${a}</option>`).join(''); sel.value=arr.includes(v)?v:''; }
+
+function openForm(id){ editId=id??null; modal.classList.remove('hidden');
+  mTitle.textContent=id?'Edit Stock Item':'Add Stock Item';
+  const x=id?DB.find(d=>d.id===id):{company:company==='ALL'?'TRES':company,status:'In Stock',qty:0,price:0,date:new Date().toISOString().slice(0,10)};
+  iCompany.value=x.company;iCode.value=x.code||'';iName.value=x.name||'';iDesc.value=x.desc||'';iQty.value=x.qty??0;iUnit.value=x.unit||'';
+  iProject.value=x.project||'';iPrice.value=x.price??0;iLocation.value=x.location||'';iStatus.value=x.status;iDate.value=x.date||'';iRemarks.value=x.remarks||'';
+  setTimeout(()=>iName.focus(),100); }
+function closeForm(){ modal.classList.add('hidden'); }
+function saveItem(){
+  if(!iName.value.trim()) return toast('Stock name is required','bg-rose-600');
+  const o={id:editId||Date.now(),company:iCompany.value,code:iCode.value,name:iName.value.trim(),desc:iDesc.value,qty:+iQty.value||0,unit:iUnit.value,
+    project:iProject.value,price:+iPrice.value||0,location:iLocation.value,status:iStatus.value,date:iDate.value,remarks:iRemarks.value};
+  if(+o.qty<=0&&o.status==='In Stock') o.status='Out of Stock';
+  if(editId){ DB[DB.findIndex(d=>d.id===editId)]=o; } else DB.unshift(o);
+  save(); closeForm(); render(); }
+function del(id){ if(confirm('Delete this item?')){ DB=DB.filter(d=>d.id!==id); save(); render(); toast('Item deleted','bg-rose-600'); } }
+function dup(id){ const x={...DB.find(d=>d.id===id),id:Date.now()}; DB.unshift(x); save(); render(); }
+
+function exportJSON(){ dl(new Blob([JSON.stringify(DB,null,2)],{type:'application/json'}),'TRES-GPSI-Inventory-Backup.json'); toast('Backup file downloaded'); }
+function importJSON(e){ const f=e.target.files[0]; if(!f)return; const r=new FileReader();
+  r.onload=()=>{ try{ const d=JSON.parse(r.result); if(Array.isArray(d)){DB=d;save();render();toast('Inventory restored ✔');} }catch(x){toast('Invalid file','bg-rose-600');} }; r.readAsText(f); }
+function exportCSV(){
+  const h=['Company','Code','Stock Name','Description','Qty','Unit','Project','Unit Price','Total Value','Location','Status','Date','Remarks'];
+  const rows=filtered().map(x=>[x.company,x.code,x.name,x.desc,x.qty,x.unit,x.project,x.price,(+x.qty*+x.price),x.location,x.status,x.date,x.remarks]);
+  const csv=[h,...rows].map(r=>r.map(c=>`"${String(c??'').replace(/"/g,'""')}"`).join(',')).join('\n');
+  dl(new Blob(['\ufeff'+csv],{type:'text/csv'}),'Inventory-'+company+'.csv'); toast('CSV exported (open in Excel)'); }
+function dl(b,n){ const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download=n; a.click(); }
+
+document.addEventListener('keydown',e=>{ if(e.key==='Escape')closeForm(); if(e.ctrlKey&&e.key==='s'){e.preventDefault();exportJSON();} });
+modal.addEventListener('click',e=>{ if(e.target===modal)closeForm(); });
+load(); setCompany('TRES');
+</script>
+</body>
+</html>
